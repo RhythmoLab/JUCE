@@ -26,19 +26,27 @@
 namespace juce
 {
 
-class FileChooser::Native    : private Component,
-                               public FileChooser::Pimpl
+#if ! (defined (__IPHONE_15_0) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_15_0)
+ JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wdeprecated-declarations")
+ #define JUCE_DEPRECATION_IGNORED 1
+#endif
+
+class FileChooser::Native  : public FileChooser::Pimpl,
+                             public Component,
+                             private AsyncUpdater
 {
 public:
     Native (FileChooser& fileChooser, int flags)
         : owner (fileChooser)
     {
-        String firstFileExtension;
-
-        static FileChooserDelegateClass cls;
-        delegate.reset ([cls.createInstance() init]);
+        static FileChooserDelegateClass delegateClass;
+        delegate.reset ([delegateClass.createInstance() init]);
         FileChooserDelegateClass::setOwner (delegate.get(), this);
 
+        static FileChooserControllerClass controllerClass;
+        auto* controllerClassInstance = controllerClass.createInstance();
+
+        String firstFileExtension;
         auto utTypeArray = createNSArrayFromStringArray (getUTTypesForWildcards (owner.filters, firstFileExtension));
 
         if ((flags & FileBrowserComponent::saveMode) != 0)
@@ -69,47 +77,55 @@ public:
             }
 
             auto url = [[NSURL alloc] initFileURLWithPath: juceStringToNS (currentFileOrDirectory.getFullPathName())];
-            controller.reset ([[UIDocumentPickerViewController alloc] initWithURL: url
-                                                                           inMode: pickerMode]);
+
+            controller.reset ([controllerClassInstance initWithURL: url
+                                                            inMode: pickerMode]);
+
             [url release];
         }
         else
         {
-            controller.reset ([[UIDocumentPickerViewController alloc] initWithDocumentTypes: utTypeArray
-                                                                                      inMode: UIDocumentPickerModeOpen]);
+            controller.reset ([controllerClassInstance initWithDocumentTypes: utTypeArray
+                                                                      inMode: UIDocumentPickerModeOpen]);
         }
+        
+        if(@available(iOS 11.0, *)) {
+            controller.get().allowsMultipleSelection=YES;
+        }
+
+        FileChooserControllerClass::setOwner (controller.get(), this);
 
         [controller.get() setDelegate: delegate.get()];
         [controller.get() setModalTransitionStyle: UIModalTransitionStyleCrossDissolve];
 
         setOpaque (false);
 
-        if (SystemStats::isRunningInAppExtensionSandbox())
+        if (fileChooser.parent != nullptr)
         {
-            if (fileChooser.parent != nullptr)
-            {
-                [controller.get() setModalPresentationStyle:UIModalPresentationFullScreen];
+            [controller.get() setModalPresentationStyle: UIModalPresentationFullScreen];
 
-                auto chooserBounds = fileChooser.parent->getBounds();
-                setBounds (chooserBounds);
+            auto chooserBounds = fileChooser.parent->getBounds();
+            setBounds (chooserBounds);
 
-                setAlwaysOnTop (true);
-                fileChooser.parent->addAndMakeVisible (this);
-            }
-            else
+            setAlwaysOnTop (true);
+            fileChooser.parent->addAndMakeVisible (this);
+        }
+        else
+        {
+            if (SystemStats::isRunningInAppExtensionSandbox())
             {
                 // Opening a native top-level window in an AUv3 is not allowed (sandboxing). You need to specify a
                 // parent component (for example your editor) to parent the native file chooser window. To do this
                 // specify a parent component in the FileChooser's constructor!
-                jassert (fileChooser.parent != nullptr);
+                jassertfalse;
+                return;
             }
-        }
-        else
-        {
-            auto chooserBounds = Desktop::getInstance().getDisplays().getMainDisplay().userArea;
+
+            auto chooserBounds = Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea;
             setBounds (chooserBounds);
 
             setAlwaysOnTop (true);
+            setVisible (true);
             addToDesktop (0);
         }
     }
@@ -131,8 +147,6 @@ public:
        #endif
     }
 
-private:
-    //==============================================================================
     void parentHierarchyChanged() override
     {
         auto* newPeer = dynamic_cast<UIViewComponentPeer*> (getPeer());
@@ -141,9 +155,21 @@ private:
         {
             peer = newPeer;
 
-            if (auto* parentController = peer->controller)
-                [parentController showViewController: controller.get() sender: parentController];
+            if (peer != nullptr)
+            {
+                if (auto* parentController = peer->controller)
+                    [parentController showViewController: controller.get() sender: parentController];
+
+                peer->toFront (false);
+            }
         }
+    }
+
+private:
+    //==============================================================================
+    void handleAsyncUpdate() override
+    {
+        pickerWasCancelled();
     }
 
     //==============================================================================
@@ -182,7 +208,9 @@ private:
             }
         }
         else
+        {
             result.add ("public.data");
+        }
 
         return result;
     }
@@ -207,6 +235,8 @@ private:
     //==============================================================================
     void didPickDocumentAtURL (NSURL* url)
     {
+        cancelPendingUpdate();
+
         bool isWriting = controller.get().documentPickerMode == UIDocumentPickerModeExportToService
                        | controller.get().documentPickerMode == UIDocumentPickerModeMoveToService;
 
@@ -264,12 +294,94 @@ private:
             owner.finished (chooserResults);
         }];
     }
+    
+    void didPickDocumentsAtURLs (NSArray<NSFileAccessIntent*>* urls)
+    {
+        cancelPendingUpdate();
+        
+        bool isWriting = controller.get().documentPickerMode == UIDocumentPickerModeExportToService
+        | controller.get().documentPickerMode == UIDocumentPickerModeMoveToService;
+        
+        NSUInteger accessOptions = isWriting ? 0 : NSFileCoordinatorReadingWithoutChanges;
+        
+        NSMutableArray* intents;
+        intents = [ NSMutableArray arrayWithCapacity: urls.count ];
+
+        // Build the list of intents
+        // to be processed in bulk by the fileCoordinator
+        //
+        for (id url in urls)
+        {
+            auto* fileAccessIntent = isWriting
+            ? [NSFileAccessIntent writingIntentWithURL: url options: accessOptions]
+            : [NSFileAccessIntent readingIntentWithURL: url options: accessOptions];
+            
+            [ intents addObject: fileAccessIntent ];
+            
+        }
+
+        auto fileCoordinator = [[NSFileCoordinator alloc] initWithFilePresenter: nil];
+        
+        [fileCoordinator coordinateAccessWithIntents: intents queue: [NSOperationQueue mainQueue] byAccessor: ^(NSError* err)
+         {
+             Array<URL> chooserResults;
+
+             if (err == nil)
+             {
+                 NSFileAccessIntent * intent;
+                 
+                 // Loop over all of our intents and add the data to chooserResults
+                 //
+                 for ( intent in intents )
+                 {
+                     [intent.URL startAccessingSecurityScopedResource];
+                     
+                     NSError* error = nil;
+                     
+                     NSData* bookmark = [intent.URL bookmarkDataWithOptions: 0
+                                      includingResourceValuesForKeys: nil
+                                                       relativeToURL: nil
+                                                               error: &error];
+                     
+                     [bookmark retain];
+                     
+                     [intent.URL stopAccessingSecurityScopedResource];
+                     
+                     URL juceUrl (nsStringToJuce ([intent.URL absoluteString]));
+                     
+                     if (error == nil)
+                     {
+                         setURLBookmark (juceUrl, (void*) bookmark);
+                     }
+                     else
+                     {
+                         auto desc = [error localizedDescription];
+                         ignoreUnused (desc);
+                         jassertfalse;
+                     }
+
+                     chooserResults.add (juceUrl);
+                 }
+             }
+             else
+             {
+                 auto desc = [err localizedDescription];
+                 ignoreUnused (desc);
+                 jassertfalse;
+             }
+
+             // Now that we are done with everything
+             // Call finished with all of the results
+             //
+             owner.finished (chooserResults);
+         }];
+    }
 
     void pickerWasCancelled()
     {
-        Array<URL> chooserResults;
+        cancelPendingUpdate();
 
-        owner.finished (chooserResults);
+        owner.finished ({});
         exitModalState (0);
     }
 
@@ -279,7 +391,11 @@ private:
         FileChooserDelegateClass()  : ObjCClass<NSObject<UIDocumentPickerDelegate>> ("FileChooserDelegate_")
         {
             addIvar<Native*> ("owner");
-
+            
+            if (@available(iOS 11.0, *)) {
+                addMethod (@selector (documentPicker:didPickDocumentsAtURLs:), didPickDocumentsAtURLs,       "v@:@@");
+            }
+            
             addMethod (@selector (documentPicker:didPickDocumentAtURL:), didPickDocumentAtURL,       "v@:@@");
             addMethod (@selector (documentPickerWasCancelled:),          documentPickerWasCancelled, "v@:@");
 
@@ -292,20 +408,47 @@ private:
         static Native* getOwner (id self)               { return getIvar<Native*> (self, "owner"); }
 
         //==============================================================================
-        static void didPickDocumentAtURL (id self, SEL, UIDocumentPickerViewController*, NSURL* url)
+        static void didPickDocumentsAtURLs (id self, SEL, UIDocumentPickerViewController*, NSArray<NSFileAccessIntent*>* urls)
         {
             auto picker = getOwner (self);
-
+            
             if (picker != nullptr)
+                picker->didPickDocumentsAtURLs (urls);
+        }
+        
+        static void didPickDocumentAtURL (id self, SEL, UIDocumentPickerViewController*, NSURL* url)
+        {
+            if (auto* picker = getOwner (self))
                 picker->didPickDocumentAtURL (url);
         }
 
         static void documentPickerWasCancelled (id self, SEL, UIDocumentPickerViewController*)
         {
-            auto picker = getOwner (self);
-
-            if (picker != nullptr)
+            if (auto* picker = getOwner (self))
                 picker->pickerWasCancelled();
+        }
+    };
+
+    struct FileChooserControllerClass  : public ObjCClass<UIDocumentPickerViewController>
+    {
+        FileChooserControllerClass()  : ObjCClass<UIDocumentPickerViewController> ("FileChooserController_")
+        {
+            addIvar<Native*> ("owner");
+            addMethod (@selector (viewDidDisappear:), viewDidDisappear, "v@:@c");
+
+            registerClass();
+        }
+
+        static void setOwner (id self, Native* owner)   { object_setInstanceVariable (self, "owner", owner); }
+        static Native* getOwner (id self)               { return getIvar<Native*> (self, "owner"); }
+
+        //==============================================================================
+        static void viewDidDisappear (id self, SEL, BOOL animated)
+        {
+            sendSuperclassMessage<void> (self, @selector (viewDidDisappear:), animated);
+
+            if (auto* picker = getOwner (self))
+                picker->triggerAsyncUpdate();
         }
     };
 
@@ -316,6 +459,7 @@ private:
     UIViewComponentPeer* peer = nullptr;
 
     static FileChooserDelegateClass fileChooserDelegateClass;
+    static FileChooserControllerClass fileChooserControllerClass;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Native)
@@ -336,5 +480,11 @@ FileChooser::Pimpl* FileChooser::showPlatformDialog (FileChooser& owner, int fla
 {
     return new FileChooser::Native (owner, flags);
 }
+
+#if JUCE_DEPRECATION_IGNORED
+ JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+#endif
+
+#undef JUCE_DEPRECATION_IGNORED
 
 } // namespace juce
