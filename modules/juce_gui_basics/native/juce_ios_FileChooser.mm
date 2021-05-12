@@ -234,6 +234,8 @@ private:
 
     void didPickDocumentsAtURLs (NSArray<NSFileAccessIntent*>* urls)
     {
+        cancelPendingUpdate();
+        
         bool isWriting = controller.get().documentPickerMode == UIDocumentPickerModeExportToService
         | controller.get().documentPickerMode == UIDocumentPickerModeMoveToService;
         
