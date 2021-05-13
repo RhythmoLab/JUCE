@@ -16,6 +16,7 @@
 
 #include <math.h>
 #include "SincResampler.h"
+#include <cassert>
 
 using namespace resampler;
 
