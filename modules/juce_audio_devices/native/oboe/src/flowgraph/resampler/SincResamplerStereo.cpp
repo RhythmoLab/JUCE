@@ -17,6 +17,7 @@
 #include <math.h>
 
 #include "SincResamplerStereo.h"
+#include <cassert>
 
 using namespace resampler;
 
