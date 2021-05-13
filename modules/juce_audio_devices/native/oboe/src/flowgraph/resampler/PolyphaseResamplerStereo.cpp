@@ -16,6 +16,7 @@
 
 #include <cassert>
 #include "PolyphaseResamplerStereo.h"
+#include <cassert>
 
 using namespace resampler;
 
