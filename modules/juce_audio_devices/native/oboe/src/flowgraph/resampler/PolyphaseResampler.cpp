@@ -18,6 +18,7 @@
 #include <math.h>
 #include "IntegerRatio.h"
 #include "PolyphaseResampler.h"
+#include <cassert>
 
 using namespace resampler;
 
