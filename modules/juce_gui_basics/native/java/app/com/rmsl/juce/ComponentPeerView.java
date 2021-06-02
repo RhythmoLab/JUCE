@@ -404,7 +404,7 @@ public final class ComponentPeerView extends ViewGroup
         outAttrs.initialSelEnd = outAttrs.initialSelStart = -1;
         outAttrs.label = "";
         outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
-        outAttrs.inputType = InputType.TYPE_NULL;
+        outAttrs.inputType = InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
 
         return new BaseInputConnection (this, false);
     }
