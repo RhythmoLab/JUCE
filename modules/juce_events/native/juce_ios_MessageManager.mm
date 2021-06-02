@@ -45,6 +45,35 @@ void MessageManager::stopDispatchLoop()
     exit (0); // iOS apps get no mercy..
 }
 
+// for some reason this works while runDispatchLoop doesn't, even though they should be the same
+#if JUCE_MODAL_LOOPS_PERMITTED
+bool MessageManager::runDispatchLoopBeatbox ()
+{
+    JUCE_AUTORELEASEPOOL
+    {
+        jassert (isThisTheMessageThread()); // must only be called by the message thread
+
+        uint32 startTime = Time::getMillisecondCounter();
+        NSDate* endDate = [NSDate dateWithTimeIntervalSinceNow: millisecondsToRunFor * 0.001];
+
+        while (quitMessagePosted.get() == 0)
+        {
+            JUCE_AUTORELEASEPOOL
+            {
+                [[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
+                                         beforeDate: [NSDate distantFuture]];
+
+                if (millisecondsToRunFor >= 0
+                     && Time::getMillisecondCounter() >= startTime + (uint32) millisecondsToRunFor)
+                    break;
+            }
+        }
+
+        return quitMessagePosted.get() == 0;
+    }
+}
+#endif
+
 #if JUCE_MODAL_LOOPS_PERMITTED
 bool MessageManager::runDispatchLoopUntil (int millisecondsToRunFor)
 {
