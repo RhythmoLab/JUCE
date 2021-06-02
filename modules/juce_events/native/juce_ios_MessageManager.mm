@@ -51,13 +51,26 @@ bool MessageManager::runDispatchLoopBeatbox ()
 {
     JUCE_AUTORELEASEPOOL
     {
-        jassert (isThisTheMessageThread()); // mus
+        jassert (isThisTheMessageThread()); // must only be called by the message thread
+
+        int millisecondsToRunFor = 1;
+        uint32 startTime = Time::getMillisecondCounter();
+        NSDate* endDate = [NSDate dateWithTimeIntervalSinceNow: millisecondsToRunFor * 0.001];
+
+        while (quitMessagePosted.get() == 0)
+        {
             JUCE_AUTORELEASEPOOL
             {
                 [[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
                                          beforeDate: [NSDate distantFuture]];
+
+                if (millisecondsToRunFor >= 0
+                     && Time::getMillisecondCounter() >= startTime + (uint32) millisecondsToRunFor)
+                    break;
             }
-        return true;
+        }
+
+        return quitMessagePosted.get() == 0;
     }
 }
 #endif
