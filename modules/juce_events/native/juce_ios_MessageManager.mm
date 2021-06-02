@@ -56,7 +56,6 @@ bool MessageManager::runDispatchLoopBeatbox ()
             {
                 [[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
                                          beforeDate: [NSDate distantFuture]];
-                break;
             }
         }
         return true;
