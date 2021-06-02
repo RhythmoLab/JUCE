@@ -732,11 +732,8 @@ public final class ComponentPeerView extends ViewGroup
         outAttrs.initialSelStart = focused != null ? focused.getHighlightedRegionBegin() : -1;
         outAttrs.initialSelEnd   = focused != null ? focused.getHighlightedRegionEnd()   : -1;
         outAttrs.label = "";
-        outAttrs.imeOptions = EditorInfo.IME_ACTION_UNSPECIFIED
-                            | EditorInfo.IME_FLAG_NO_EXTRACT_UI
-                            | EditorInfo.IME_FLAG_NO_ENTER_ACTION;
-        outAttrs.inputType = focused != null ? getInputTypeForJuceVirtualKeyboardType (focused.getKeyboardType())
-                                             : 0;
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+        outAttrs.inputType = InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
 
         cachedConnection = new Connection (this, true, focused);
         return cachedConnection;
