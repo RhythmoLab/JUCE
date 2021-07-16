@@ -86,6 +86,12 @@ public:
     // This function is only safe to call from a single thread at a time.
     bool push (IncomingCommand& command) { return queue.push (command); }
 
+    void popAll()
+    {
+        const ScopedLock lock (popMutex);
+        queue.popAll ([] (IncomingCommand& command) { command(); command = nullptr; });
+    }
+
     using Thread::startThread;
     using Thread::stopThread;
 
@@ -94,13 +100,23 @@ private:
     {
         while (! threadShouldExit())
         {
-            if (queue.hasPendingMessages())
+            const auto tryPop = [&]
+            {
+                const ScopedLock lock (popMutex);
+
+                if (! queue.hasPendingMessages())
+                    return false;
+
                 queue.pop ([] (IncomingCommand& command) { command(); command = nullptr;});
-            else
+                return true;
+            };
+
+            if (! tryPop())
                 sleep (10);
         }
     }
 
+    CriticalSection popMutex;
     Queue<IncomingCommand> queue;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BackgroundMessageQueue)
@@ -765,6 +781,8 @@ private:
 
         if (wantsNormalise == Convolution::Normalise::yes)
             normaliseImpulseResponse (resampled);
+        else
+            resampled.applyGain ((float) (originalSampleRate / processSpec.sampleRate));
 
         const auto currentLatency = jmax (processSpec.maximumBlockSize, (uint32) latency.latencyInSamples);
         const auto maxBufferSize = shouldBeZeroLatency ? static_cast<int> (processSpec.maximumBlockSize)
@@ -892,7 +910,6 @@ public:
     std::unique_ptr<MultichannelEngine> getEngine() { return factory.getEngine(); }
 
 private:
-
     template <typename Fn>
     void callLater (Fn&& fn)
     {
@@ -1017,9 +1034,13 @@ public:
 
     void prepare (const ProcessSpec& spec)
     {
+        messageQueue->pimpl->popAll();
         mixer.prepare (spec);
         engineQueue->prepare (spec);
-        currentEngine = engineQueue->getEngine();
+
+        if (auto newEngine = engineQueue->getEngine())
+            currentEngine = std::move (newEngine);
+
         previousEngine = nullptr;
         jassert (currentEngine != nullptr);
     }
