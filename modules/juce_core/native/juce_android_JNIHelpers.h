@@ -252,7 +252,8 @@ private:
  METHOD (getApplicationContext,                "getApplicationContext",           "()Landroid/content/Context;") \
  METHOD (getApplicationInfo,                   "getApplicationInfo",              "()Landroid/content/pm/ApplicationInfo;") \
  METHOD (checkCallingOrSelfPermission,         "checkCallingOrSelfPermission",    "(Ljava/lang/String;)I") \
- METHOD (getCacheDir,                          "getCacheDir",                     "()Ljava/io/File;")
+ METHOD (getCacheDir,                          "getCacheDir",                     "()Ljava/io/File;") \
+ METHOD (getFilesDir,                           "getFilesDir",                     "()Ljava/io/File;")
 
 DECLARE_JNI_CLASS (AndroidContext, "android/content/Context")
 #undef JNI_CLASS_MEMBERS

@@ -16,6 +16,7 @@
 
 #include <cassert>
 #include "PolyphaseResamplerMono.h"
+#include <cassert>
 
 using namespace resampler;
 

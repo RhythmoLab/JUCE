@@ -540,9 +540,37 @@ static File getDocumentsDirectory()
 {
     auto* env = getEnv();
 
-    if (getAndroidSDKVersion() >= 19)
-        return getWellKnownFolder ("DIRECTORY_DOCUMENTS");
+    if (getAndroidSDKVersion() >= 19) {
+        auto result = getWellKnownFolder ("DIRECTORY_DOCUMENTS");
 
+        // Only return this IF IT EXISTS!
+        // It is trivial to make this fail - simply create an emulator *WITH NO SD CARD*:
+        // - no "Documents" folder exists in the local storage area!
+        if (result.exists() == true) {
+            return result;
+        }
+        // Otherwise, drop down!
+    }
+
+    // No storage found yet - the only place you can be *sure* to write to for this app,
+    // is the one returned by getFilesDir(). Note this requires the addition of getFilesDir to juce_android_JNIHelpers.h:
+    //    METHOD (getCacheDir,                          "getCacheDir",                     "()Ljava/io/File;") \
+    //    METHOD (getFilesDir,                           "getFilesDir",                     "()Ljava/io/File;")
+    auto appContext = getAppContext();
+
+    if (appContext != nullptr) {
+        LocalRef <jobject> fileDir(
+                env->CallObjectMethod(appContext.get(), AndroidContext.getFilesDir));
+        LocalRef <jstring> jPath(
+                (jstring) env->CallObjectMethod(fileDir.get(), JavaFile.getAbsolutePath));
+
+        auto result = File(juceString(env, jPath.get()));
+        if (result.exists()) {
+            return result;
+        }
+    }
+
+    // Nothing found. Fall-back...
     return juceFile (LocalRef<jobject> (env->CallStaticObjectMethod (AndroidEnvironment, AndroidEnvironment.getDataDirectory)));
 }
 
