@@ -86,6 +86,7 @@ public:
         otherwise returns true.
     */
     bool runDispatchLoopUntil (int millisecondsToRunFor);
+    bool runDispatchLoopBeatbox ();
    #endif
 
     //==============================================================================
