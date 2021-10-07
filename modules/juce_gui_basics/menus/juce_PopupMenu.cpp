@@ -164,11 +164,6 @@ struct ItemComponent  : public Component
         }
     }
 
-    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override
-    {
-        return item.isSeparator ? nullptr : std::make_unique<ItemAccessibilityHandler> (*this);
-    }
-
     PopupMenu::Item item;
 
 private:
@@ -252,6 +247,11 @@ private:
         ItemComponent& itemComponent;
     };
 
+    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return item.isSeparator ? nullptr : std::make_unique<ItemAccessibilityHandler> (*this);
+    }
+
     //==============================================================================
     MenuWindow& parentWindow;
     const PopupMenu::Options& options;
@@ -330,6 +330,17 @@ struct MenuWindow  : public Component
         }
         else
         {
+            const auto shouldDisableAccessibility = [this]
+            {
+                const auto* compToCheck = parent != nullptr ? parent
+                                                            : options.getTargetComponent();
+
+                return compToCheck != nullptr && ! compToCheck->isAccessible();
+            }();
+
+            if (shouldDisableAccessibility)
+                setAccessible (false);
+
             addToDesktop (ComponentPeer::windowIsTemporary
                           | ComponentPeer::windowIgnoresKeyPresses
                           | lf.getMenuWindowFlags());

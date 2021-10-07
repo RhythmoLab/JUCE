@@ -2408,16 +2408,22 @@ public:
     */
     void setHelpText (const String& newHelpText);
 
-    /** Sets whether this component is visible to accessibility clients.
+    /** Sets whether this component and its children are visible to accessibility clients.
 
         If this flag is set to false then the getAccessibilityHandler() method will return nullptr
-        and this component will not be visible to any accessibility clients.
+        and this component and its children will not be visible to any accessibility clients.
 
         By default this is set to true.
 
-        @see getAccessibilityHandler
+        @see isAccessible, getAccessibilityHandler
     */
     void setAccessible (bool shouldBeAccessible);
+
+    /** Returns true if this component and its children are visible to accessibility clients.
+
+        @see setAccessible
+    */
+    bool isAccessible() const noexcept;
 
     /** Returns the accessibility handler for this component, or nullptr if this component is not
         accessible.
@@ -2595,6 +2601,8 @@ protected:
     //==============================================================================
     /** @internal */
     virtual ComponentPeer* createNewPeer (int styleFlags, void* nativeWindowToAttachTo);
+    /** @internal */
+    static std::unique_ptr<AccessibilityHandler> createIgnoredAccessibilityHandler (Component&);
    #endif
 };
 
