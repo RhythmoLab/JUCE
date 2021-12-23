@@ -122,7 +122,7 @@ class JUCE_API  SamplerVoice    : public SynthesiserVoice
 public:
     //==============================================================================
     /** Creates a SamplerVoice. */
-    SamplerVoice();
+    SamplerVoice(int32_t iBufferSize);
 
     /** Destructor. */
     ~SamplerVoice() override;
@@ -147,6 +147,12 @@ private:
 
     ADSR adsr;
 
+    int32_t bufferSize = 512;
+    bool isFading = false;
+    float startingGain = 0;
+    std::unique_ptr<AudioBuffer<float>> fadeBuffer;
+    bool renderingFade = false;
+    
     JUCE_LEAK_DETECTOR (SamplerVoice)
 };
 
