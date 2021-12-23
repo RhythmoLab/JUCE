@@ -67,7 +67,11 @@ bool SamplerSound::appliesToChannel (int /*midiChannel*/)
 }
 
 //==============================================================================
-SamplerVoice::SamplerVoice() {}
+SamplerVoice::SamplerVoice(int32_t iBufferSize) : bufferSize(iBufferSize)
+{
+    fadeBuffer.reset (new AudioBuffer<float> (2, bufferSize));
+}
+
 SamplerVoice::~SamplerVoice() {}
 
 bool SamplerVoice::canPlaySound (SynthesiserSound* sound)
@@ -75,8 +79,16 @@ bool SamplerVoice::canPlaySound (SynthesiserSound* sound)
     return dynamic_cast<const SamplerSound*> (sound) != nullptr;
 }
 
+#undef DBG
+#define DBG(textToWrite)
+
 void SamplerVoice::startNote (int midiNoteNumber, float velocity, SynthesiserSound* s, int /*currentPitchWheelPosition*/)
 {
+    if (isFading)
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::startNote isFading = true");
+    else
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::startNote isFading = false");
+
     if (auto* sound = dynamic_cast<const SamplerSound*> (s))
     {
         pitchRatio = std::pow (2.0, (midiNoteNumber - sound->midiRootNote) / 12.0)
@@ -101,10 +113,48 @@ void SamplerVoice::stopNote (float /*velocity*/, bool allowTailOff)
 {
     if (allowTailOff)
     {
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::stopNote - tail off true");
         adsr.noteOff();
     }
     else
     {
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::stopNote - tail off false");
+
+#if 1
+        if (renderingFade)
+        {
+            DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::stopNote - currently rendering a fade");
+            return;
+        }
+        
+        fadeBuffer->clear();
+        renderingFade = true;
+        renderNextBlock(*fadeBuffer.get(), 0, bufferSize);
+        renderingFade = false;
+
+        // If the pitchRatio is less than 1, the lenght of the ramp
+        // needs to be computed since it will not use the entire buffer
+        // to get the 0
+        //
+        int32_t endSample = bufferSize;
+        if (pitchRatio < 1.0)
+        {
+            endSample = static_cast<int32_t>(endSample * pitchRatio);
+        }
+        
+        fadeBuffer->applyGainRamp(0, 0, endSample, startingGain, 0);
+        
+        if (fadeBuffer->getNumChannels() > 1)
+            fadeBuffer->applyGainRamp(1, 0, endSample, startingGain, 0);
+        
+        // Need to clear the remaining samples after ramping to 0
+        //
+        fadeBuffer->clear(endSample, (bufferSize - endSample));
+        
+        isFading = true;
+#endif
+
+        isFading = true;
         clearCurrentNote();
         adsr.reset();
     }
@@ -116,14 +166,33 @@ void SamplerVoice::controllerMoved (int /*controllerNumber*/, int /*newValue*/) 
 //==============================================================================
 void SamplerVoice::renderNextBlock (AudioBuffer<float>& outputBuffer, int startSample, int numSamples)
 {
+    if (isFading)
+    {
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::renderNextBlock - fading - startSample = " << startSample << " numSamples = " << numSamples << " sourceSamplePosition = " << sourceSamplePosition);
+        isFading = false;
+
+        auto numChannels = outputBuffer.getNumChannels();
+        for (auto channel = 0; channel != numChannels; ++channel)
+        {
+            if (fadeBuffer->getNumChannels() > channel)
+            {
+                outputBuffer.copyFrom (channel, 0, fadeBuffer->getReadPointer (channel), numSamples);
+            }
+        }
+    }
+    else
     if (auto* playingSound = static_cast<SamplerSound*> (getCurrentlyPlayingSound().get()))
     {
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::renderNextBlock - playing sound - startSample = " << startSample << " numSamples = " << numSamples << " sourceSamplePosition = " << sourceSamplePosition);
+        
         auto& data = *playingSound->data;
         const float* const inL = data.getReadPointer (0);
         const float* const inR = data.getNumChannels() > 1 ? data.getReadPointer (1) : nullptr;
 
         float* outL = outputBuffer.getWritePointer (0, startSample);
         float* outR = outputBuffer.getNumChannels() > 1 ? outputBuffer.getWritePointer (1, startSample) : nullptr;
+
+        bool captureStartingGain = true;
 
         while (--numSamples >= 0)
         {
@@ -135,8 +204,13 @@ void SamplerVoice::renderNextBlock (AudioBuffer<float>& outputBuffer, int startS
             float l = (inL[pos] * invAlpha + inL[pos + 1] * alpha);
             float r = (inR != nullptr) ? (inR[pos] * invAlpha + inR[pos + 1] * alpha)
                                        : l;
-
             auto envelopeValue = adsr.getNextSample();
+
+            if (captureStartingGain)
+            {
+                captureStartingGain = false;
+                startingGain = envelopeValue;
+            }
 
             l *= lgain * envelopeValue;
             r *= rgain * envelopeValue;
@@ -159,6 +233,10 @@ void SamplerVoice::renderNextBlock (AudioBuffer<float>& outputBuffer, int startS
                 break;
             }
         }
+    }
+    else
+    {
+        DBG (reinterpret_cast<uint64_t>(this) << " SamplerVoice::renderNextBlock - no sound to play - startSample = " << startSample << " numSamples = " << numSamples << " sourceSamplePosition = " << sourceSamplePosition);
     }
 }
 

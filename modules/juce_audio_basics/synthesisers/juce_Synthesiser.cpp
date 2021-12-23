@@ -285,19 +285,31 @@ void Synthesiser::noteOn (const int midiChannel,
                           const int midiNoteNumber,
                           const float velocity)
 {
+    DBG ("Synthesiser::noteOn");
+
     const ScopedLock sl (lock);
 
     for (auto* sound : sounds)
     {
         if (sound->appliesToNote (midiNoteNumber) && sound->appliesToChannel (midiChannel))
         {
+            SynthesiserVoice* voiceToUse = nullptr;
             // If hitting a note that's still ringing, stop it first (it could be
             // still playing because of the sustain or sostenuto pedal).
             for (auto* voice : voices)
                 if (voice->getCurrentlyPlayingNote() == midiNoteNumber && voice->isPlayingChannel (midiChannel))
+                {
                     stopVoice (voice, 1.0f, true);
+                    voiceToUse = voice;
+                    break;
+                }
+            
+            if (voiceToUse == nullptr)
+            {
+                voiceToUse = findFreeVoice (sound, midiChannel, midiNoteNumber, shouldStealNotes);
+            }
 
-            startVoice (findFreeVoice (sound, midiChannel, midiNoteNumber, shouldStealNotes),
+            startVoice (voiceToUse,
                         sound, midiChannel, midiNoteNumber, velocity);
         }
     }
@@ -342,6 +354,8 @@ void Synthesiser::noteOff (const int midiChannel,
                            const float velocity,
                            const bool allowTailOff)
 {
+    DBG ("Synthesiser::noteOff");
+
     const ScopedLock sl (lock);
 
     for (auto* voice : voices)
@@ -492,10 +506,18 @@ SynthesiserVoice* Synthesiser::findFreeVoice (SynthesiserSound* soundToPlay,
 
     for (auto* voice : voices)
         if ((! voice->isVoiceActive()) && voice->canPlaySound (soundToPlay))
+        {
+            DBG ("Synthesiser::findFreeVoice - " << reinterpret_cast<uint64_t>(voice));
             return voice;
-
+        }
+    
     if (stealIfNoneAvailable)
-        return findVoiceToSteal (soundToPlay, midiChannel, midiNoteNumber);
+    {
+        auto voice = findVoiceToSteal (soundToPlay, midiChannel, midiNoteNumber);
+        DBG ("Synthesiser::findFreeVoice findVoiceToSteal - " << reinterpret_cast<uint64_t>(voice));
+        return voice;
+//        return findVoiceToSteal (soundToPlay, midiChannel, midiNoteNumber);
+    }
 
     return nullptr;
 }
