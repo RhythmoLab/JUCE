@@ -407,16 +407,16 @@ private:
         {
             addIvar<Native*> ("owner");
 
-            addMethod (@selector (documentPicker:didPickDocumentAtURL:),   didPickDocumentAtURL);
-            addMethod (@selector (documentPicker:didPickDocumentsAtURLs:), didPickDocumentsAtURLs);
-            addMethod (@selector (documentPickerWasCancelled:),            documentPickerWasCancelled);
-//            JUCE added these methods in the main repo. Keeping our implementation just in case
-//            if (@available(iOS 11.0, *)) {
-//                addMethod (@selector (documentPicker:didPickDocumentsAtURLs:), didPickDocumentsAtURLs,       "v@:@@");
-//            }
-//
-//            addMethod (@selector (documentPicker:didPickDocumentAtURL:), didPickDocumentAtURL,       "v@:@@");
-//            addMethod (@selector (documentPickerWasCancelled:),          documentPickerWasCancelled, "v@:@");
+//            JUCE added these methods in the main repo after we already implemented them. They don't work with our implementation though.
+//            addMethod (@selector (documentPicker:didPickDocumentAtURL:),   didPickDocumentAtURL);
+//            addMethod (@selector (documentPicker:didPickDocumentsAtURLs:), didPickDocumentsAtURLs);
+//            addMethod (@selector (documentPickerWasCancelled:),            documentPickerWasCancelled);
+            if (@available(iOS 11.0, *)) {
+                addMethod (@selector (documentPicker:didPickDocumentsAtURLs:), didPickDocumentsAtURLs,       "v@:@@");
+            }
+
+            addMethod (@selector (documentPicker:didPickDocumentAtURL:), didPickDocumentAtURL,       "v@:@@");
+            addMethod (@selector (documentPickerWasCancelled:),          documentPickerWasCancelled, "v@:@");
 
             addProtocol (@protocol (UIDocumentPickerDelegate));
 
