@@ -263,7 +263,6 @@ template <typename T, size_t N> constexpr auto numBytes (const T (&) [N]) { retu
  METHOD (checkCallingOrSelfPermission,         "checkCallingOrSelfPermission",    "(Ljava/lang/String;)I") \
  METHOD (checkCallingOrSelfUriPermission,      "checkCallingOrSelfUriPermission", "(Landroid/net/Uri;I)I") \
  METHOD (getCacheDir,                          "getCacheDir",                     "()Ljava/io/File;")
- METHOD (getFilesDir,                           "getFilesDir",                     "()Ljava/io/File;")
 
 DECLARE_JNI_CLASS (AndroidContext, "android/content/Context")
 #undef JNI_CLASS_MEMBERS
